@@ -531,12 +531,7 @@ from django.contrib.auth.models import User
 from oauth_provider.models import Resource, Consumer
 from oauth_provider.models import Token
 
-
-
-class OAuthTestsBug10(TestCase):
-    """
-    See https://code.welldev.org/django-oauth-plus/issue/10/malformed-callback-url-when-user-denies
-    """
+class BaseOAuthTestCase(TestCase):
     def setUp(self):
         username = self.username = 'jane'
         password = self.password = 'toto'
@@ -547,7 +542,7 @@ class OAuthTestsBug10(TestCase):
         CONSUMER_KEY = self.CONSUMER_KEY = 'dpf43f3p2l4k3l03'
         CONSUMER_SECRET = self.CONSUMER_SECRET = 'kd94hf93k423kf44'
         consumer = self.consumer = Consumer(key=CONSUMER_KEY, secret=CONSUMER_SECRET,
-                                            name='printer.example.com', user=jane)
+            name='printer.example.com', user=jane)
         consumer.save()
 
         self.callback_token = self.callback = 'http://printer.example.com/request_token_ready'
@@ -561,48 +556,51 @@ class OAuthTestsBug10(TestCase):
             'oauth_version': '1.0',
             'oauth_callback': self.callback,
             'scope': 'photos',  # custom argument to specify Protected Resource
-            }
+        }
 
         self.c = Client()
 
-    def test_Request_token_request_succeeds_with_valid_request_token_parameters(self):
+    def _request_token(self):
         # The Consumer sends the following HTTP POST request to the
         # Service Provider:
-
         response = self.c.get("/oauth/request_token/", self.request_token_parameters)
-
-        # The Service Provider checks the signature and replies with an unauthorized Request Token in the body of the HTTP response:
         self.assertEqual(
             response.status_code,
             200
-            )
+        )
         self.assert_(
             re.match(r'oauth_token_secret=[^&]+&oauth_token=[^&]+&oauth_callback_confirmed=true',
-                     response.content
-                     ))
-
+                response.content
+            ))
         token = self.request_token = list(Token.objects.all())[-1]
         self.assert_(token.key in response.content)
         self.assert_(token.secret in response.content)
+        self.assert_(not self.request_token.is_approved)
+        return response
+
+
+class OAuthTestsBug10(BaseOAuthTestCase):
+    """
+    See https://code.welldev.org/django-oauth-plus/issue/10/malformed-callback-url-when-user-denies
+    """
+    def test_Request_token_request_succeeds_with_valid_request_token_parameters(self):
+        response = self._request_token()
+        token = self.request_token
+
         self.assertEqual(token.callback,
                          self.callback_token)
-        self.assert_(not self.request_token.is_approved)
         self.assertEqual(
             token.callback_confirmed,
             self.callback_confirmed)
 
     def test_Requesting_user_authorization_fails_when_user_denies_authorization(self):
-        self.test_Request_token_request_succeeds_with_valid_request_token_parameters()
+        self._request_token()
         self.c.login(username=self.username, password=self.password)
         parameters = self.authorization_parameters = {'oauth_token': self.request_token.key}
         response = self.c.get("/oauth/authorize/", parameters)
         self.assertEqual(
             response.status_code,
             200)
-
-        #self.assertEqual(
-        #    response.content,
-        #    'Fake authorize view for printer.example.com with params: oauth_token=...')
 
         # fake access not granted by the user (set session parameter again)
         self.authorization_parameters['authorize_access'] = 0
@@ -613,3 +611,15 @@ class OAuthTestsBug10(TestCase):
         self.assertEqual('http://printer.example.com/request_token_ready?error=Access+not+granted+by+user.', response['Location'])
         self.c.logout()
 
+class OAuthOutOfBoundTests(BaseOAuthTestCase):
+    def test_Requesting_user_authorization_succeeds_when_oob(self):
+        self.request_token_parameters['oauth_callback'] = 'oob'
+        self._request_token()
+
+        self.c.login(username=self.username, password=self.password)
+        parameters = self.authorization_parameters = {'oauth_token': self.request_token.key}
+        response = self.c.get("/oauth/authorize/", parameters)
+
+        self.assertEqual(
+            response.status_code,
+            200)
