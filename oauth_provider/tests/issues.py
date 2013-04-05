@@ -1,66 +1,11 @@
 import time
-import re
-
+from oauth_provider.tests.auth import BaseOAuthTestCase
 import oauth2 as oauth
 import json
-
-from django.test import TestCase
-from django.test.client import Client
 from django.test.client import RequestFactory
-
-from oauth_provider.compat import User
-from oauth_provider.models import Resource, Consumer
 from oauth_provider.models import Token
 from oauth_provider import utils
 from oauth_provider.store import store as oauth_provider_store
-from oauth_provider.store import InvalidTokenError
-
-class BaseOAuthTestCase(TestCase):
-    def setUp(self):
-        username = self.username = 'jane'
-        password = self.password = 'toto'
-        email = self.email = 'jane@example.com'
-        jane = self.jane = User.objects.create_user(username, email, password)
-        resource = self.resource = Resource(name='photos', url='/oauth/photo/')
-        resource.save()
-        CONSUMER_KEY = self.CONSUMER_KEY = 'dpf43f3p2l4k3l03'
-        CONSUMER_SECRET = self.CONSUMER_SECRET = 'kd94hf93k423kf44'
-        consumer = self.consumer = Consumer(key=CONSUMER_KEY, secret=CONSUMER_SECRET,
-            name='printer.example.com', user=jane)
-        consumer.save()
-
-        self.callback_token = self.callback = 'http://printer.example.com/request_token_ready'
-        self.callback_confirmed = True
-        self.request_token_parameters = {
-            'oauth_consumer_key': self.CONSUMER_KEY,
-            'oauth_signature_method': 'PLAINTEXT',
-            'oauth_signature': '%s&' % self.CONSUMER_SECRET,
-            'oauth_timestamp': str(int(time.time())),
-            'oauth_nonce': 'requestnonce',
-            'oauth_version': '1.0',
-            'oauth_callback': self.callback,
-            'scope': 'photos',  # custom argument to specify Protected Resource
-        }
-
-        self.c = Client()
-
-    def _request_token(self):
-        # The Consumer sends the following HTTP POST request to the
-        # Service Provider:
-        response = self.c.get("/oauth/request_token/", self.request_token_parameters)
-        self.assertEqual(
-            response.status_code,
-            200
-        )
-        self.assert_(
-            re.match(r'oauth_token_secret=[^&]+&oauth_token=[^&]+&oauth_callback_confirmed=true',
-                response.content
-            ))
-        token = self.request_token = list(Token.objects.all())[-1]
-        self.assert_(token.key in response.content)
-        self.assert_(token.secret in response.content)
-        self.assert_(not self.request_token.is_approved)
-        return response
 
 
 class OAuthTestsBug10(BaseOAuthTestCase):
@@ -181,3 +126,61 @@ class OauthTestIssue24(BaseOAuthTestCase):
 
         #check that this does not throw an oauth.Error
         oauth_server.verify_request(oauth_request, consumer, token)
+
+class OAuthTestsBug24PostWithApplicationJSON(BaseOAuthTestCase):
+    def test_post_using_authorization_header(self):
+        self._request_token()
+        self._authorize()
+
+        parameters = {
+            'oauth_consumer_key': self.CONSUMER_KEY,
+            'oauth_signature_method': "PLAINTEXT",
+            'oauth_version': "1.0",
+            'oauth_token': self.oauth_token,
+            'oauth_timestamp': str(int(time.time())),
+            'oauth_nonce': str(int(time.time()))+"nonce",
+            'oauth_signature': "%s&%s" % (self.CONSUMER_SECRET, self.oauth_token_secret),
+            }
+        header = self._get_http_authorization_header(parameters)
+        response = self.c.post("/oauth/photo/", HTTP_AUTHORIZATION=header)
+
+        self.assertEqual(response.status_code, 200)
+
+    def test_post_using_header_with_content_type_json(self):
+        self._request_token()
+        self._authorize()
+
+        parameters = {
+            'oauth_consumer_key': self.CONSUMER_KEY,
+            'oauth_signature_method': "PLAINTEXT",
+            'oauth_version': "1.0",
+            'oauth_token': self.oauth_token,
+            'oauth_timestamp': str(int(time.time())),
+            'oauth_nonce': str(int(time.time()))+"nonce",
+            'oauth_signature': "%s&%s" % (self.CONSUMER_SECRET, self.oauth_token_secret),
+            }
+
+        header = self._get_http_authorization_header(parameters)
+        response = self.c.post("/oauth/photo/", HTTP_AUTHORIZATION=header, CONTENT_TYPE="application/json")
+
+        self.assertEqual(response.status_code, 200)
+
+class OAuthTestsBug2UrlParseNonHttpScheme(BaseOAuthTestCase):
+    def test_non_http_url_callback_scheme(self):
+
+        # @vmihailenco callback example
+        self.request_token_parameters['oauth_callback'] = 'ftp://fnaffgdfmcfbjiifjkhbfbnjljaabiaj.com/chrome_ex_oauth.html?q=1'
+        self._request_token()
+
+        self.c.login(username=self.username, password=self.password)
+        parameters = self.authorization_parameters = {'oauth_token': self.request_token.key}
+        response = self.c.get("/oauth/authorize/", parameters)
+        self.assertEqual(response.status_code, 200)
+
+        # fill form (authorize us)
+        parameters['authorize_access'] = 1
+        response = self.c.post("/oauth/authorize/", parameters)
+        self.assertEqual(response.status_code, 302)
+
+        # assert query part of url is not malformed
+        assert "?q=1&" in response["Location"]

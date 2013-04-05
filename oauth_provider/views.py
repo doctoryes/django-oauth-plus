@@ -10,6 +10,7 @@ from django.core.urlresolvers import get_callable
 
 from decorators import oauth_required
 from forms import AuthorizeRequestTokenForm
+from oauth_provider.compat import UnsafeRedirect
 from store import store, InvalidConsumerError, InvalidTokenError
 from utils import verify_oauth_request, get_oauth_request, require_params, send_oauth_error
 from utils import is_xauth_request, verify_xauth_request
@@ -19,6 +20,8 @@ OAUTH_AUTHORIZE_VIEW = 'OAUTH_AUTHORIZE_VIEW'
 OAUTH_CALLBACK_VIEW = 'OAUTH_CALLBACK_VIEW'
 INVALID_PARAMS_RESPONSE = send_oauth_error(oauth.Error(
                                             _('Invalid request parameters.')))
+
+UNSAFE_REDIRECTS = getattr(settings, "OAUTH_UNSAFE_REDIRECTS", False)
 
 @csrf_exempt
 def request_token(request):
@@ -78,7 +81,11 @@ def user_authorization(request, form_class=AuthorizeRequestTokenForm):
             else:
                 args = { 'error': _('Access not granted by user.') }
             if request_token.callback is not None and request_token.callback != OUT_OF_BAND:
-                response = HttpResponseRedirect(request_token.get_callback_url(args))
+                callback_url = request_token.get_callback_url(args)
+                if UNSAFE_REDIRECTS:
+                    response = UnsafeRedirect(callback_url)
+                else:
+                    response = HttpResponseRedirect(callback_url)
             else:
                 # try to get custom callback view
                 callback_view_str = getattr(settings, OAUTH_CALLBACK_VIEW,
