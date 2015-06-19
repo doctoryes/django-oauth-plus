@@ -1,6 +1,7 @@
 from django.conf import settings
 from django.core.exceptions import ImproperlyConfigured
-from django.utils import importlib
+
+from oauth_provider.compat import importlib
 
 
 class Error(Exception):
