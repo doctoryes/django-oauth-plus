@@ -3,6 +3,7 @@ from __future__ import absolute_import
 import cgi
 import time
 import oauth2 as oauth
+import urllib
 from django.http import HttpResponse
 from django.test import Client
 
@@ -22,10 +23,10 @@ class ProtocolExample(BaseOAuthTestCase):
     """
     def _last_created_request_token(self):
         return list(Token.objects.filter(token_type=Token.REQUEST))[-1]
-    
+
     def _last_created_access_token(self):
         return list(Token.objects.filter(token_type=Token.ACCESS))[-1]
-    
+
     def _update_token_from_db(self, request_token):
         """Get fresh copy of the token from the DB"""
         return Token.objects.get(key=request_token.key)
@@ -109,7 +110,7 @@ class ProtocolExample(BaseOAuthTestCase):
         response = self.c.get("/oauth/request_token/", parameters)
 
         self.assertEqual(response.status_code, 200)
-        response_params = cgi.parse_qs(response.content.decode('utf-8'))
+        response_params = urllib.parse.parse_qs(response.content.decode('utf-8'))
         oob_token = self._last_created_request_token()
 
         self.assertTrue(oob_token.key in response_params['oauth_token'])
@@ -120,7 +121,7 @@ class ProtocolExample(BaseOAuthTestCase):
     def _validate_request_token_response(self, response):
         self.assertEqual(response.status_code, 200)
 
-        response_params = cgi.parse_qs(response.content.decode('utf-8'))
+        response_params = urllib.parse.parse_qs(response.content.decode('utf-8'))
         last_token = self._last_created_request_token()
 
         self.assertTrue(last_token.key in response_params['oauth_token'])
@@ -203,7 +204,7 @@ class ProtocolExample(BaseOAuthTestCase):
         parameters = self._make_access_token_parameters(request_token)
 
         response = self.c.get("/oauth/access_token/", parameters)
-        response_params = cgi.parse_qs(response.content.decode('utf-8'))
+        response_params = urllib.parse.parse_qs(response.content.decode('utf-8'))
 
         access_token = self._last_created_access_token()
 
@@ -354,7 +355,7 @@ class ProtocolExample(BaseOAuthTestCase):
 
         self.assertEqual(response.status_code, 200)
 
-        response_params = cgi.parse_qs(response.content.decode('utf-8'))
+        response_params = urllib.parse.parse_qs(response.content.decode('utf-8'))
         access_token = list(Token.objects.filter(token_type=Token.ACCESS))[-1]
 
         self.assertEqual(response_params['oauth_token'][0], access_token.key)

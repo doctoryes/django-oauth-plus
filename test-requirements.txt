@@ -1,4 +1,5 @@
 mock
 unittest-xml-reporting
 tox
-git+https://github.com/joestump/python-oauth2.git@master#egg=oauth2
+oauth2
+pysqlite3

@@ -4,9 +4,9 @@ import oauth2 as oauth
 from django.conf import settings
 from django.contrib.auth import authenticate
 from django.contrib.auth.decorators import login_required
-from django.core.urlresolvers import get_callable
 from django.http import HttpResponse, HttpResponseBadRequest
 from django.http import HttpResponseRedirect
+from django.urls import get_callable
 from django.utils.translation import ugettext as _
 from django.views.decorators.csrf import csrf_exempt
 from six.moves.urllib.parse import urlencode
@@ -233,7 +233,7 @@ def protected_resource_example(request):
 def fake_authorize_view(request, token, callback, params):
     """
     Fake view for tests. It must return an ``HttpResponse``.
-    
+
     You need to define your own in ``settings.OAUTH_AUTHORIZE_VIEW``.
     """
     return HttpResponse('Fake authorize view for %s with params: %s.' % (token.consumer.name, params))
@@ -242,7 +242,7 @@ def fake_authorize_view(request, token, callback, params):
 def fake_callback_view(request, **args):
     """
     Fake view for tests. It must return an ``HttpResponse``.
-    
+
     You can define your own in ``settings.OAUTH_CALLBACK_VIEW``.
     """
     return HttpResponse('Fake callback view.')

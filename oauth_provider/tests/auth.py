@@ -131,6 +131,7 @@ class BaseOAuthTestCase(TestCase):
         else:
             raise NotImplementedError
 
+        print("Response: ", response.content)
         self.assertEqual(response.status_code, 200)
         response_params = parse_qs(response.content.decode('utf-8'))
 
